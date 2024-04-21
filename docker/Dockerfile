@@ -3,31 +3,23 @@ FROM alpine:3.18.4 as base
 WORKDIR /app
 RUN apk add --no-cache tzdata eudev tini nodejs
 
-# Build
-FROM base as build
+# Dependencies and build
+FROM base as dependencies_and_build
 
 COPY package*.json tsconfig.json index.js ./
 COPY lib ./lib
 
 RUN apk add --no-cache --virtual .buildtools make gcc g++ python3 linux-headers git npm && \
-    npm install && \
+    npm ci && \
     npm run build && \
-    apk del .buildtools
-
-# Dependencies
-FROM base as dependencies
-
-COPY package*.json ./
-
-RUN apk add --no-cache --virtual .buildtools make gcc g++ python3 linux-headers git npm && \
-    npm ci --production --no-audit --no-optional --no-update-notifier && \
+    npm ci --omit=dev,optional --audit=false && \
     apk del .buildtools
 
 # Release
 FROM base as release
 
-COPY --from=dependencies /app/node_modules ./node_modules
-COPY --from=build /app/dist ./dist
+COPY --from=dependencies_and_build /app/node_modules ./node_modules
+COPY --from=dependencies_and_build /app/dist ./dist
 COPY package.json LICENSE index.js data/configuration.yaml data/configuration.example.yaml ./
 
 COPY docker/docker-entrypoint.sh /usr/local/bin/
